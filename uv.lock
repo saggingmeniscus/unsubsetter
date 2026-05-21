@@ -545,11 +545,11 @@ dependencies = [
     { name = "click" },
     { name = "fonttools" },
     { name = "pikepdf" },
+    { name = "pillow" },
 ]
 
 [package.optional-dependencies]
 dev = [
-    { name = "pillow" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
@@ -560,7 +560,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1" },
     { name = "fonttools", specifier = ">=4.50" },
     { name = "pikepdf", specifier = ">=9.0" },
-    { name = "pillow", marker = "extra == 'dev'", specifier = ">=10.0" },
+    { name = "pillow", specifier = ">=10.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
