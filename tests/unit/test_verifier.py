@@ -47,3 +47,24 @@ def test_verify_structural_detects_page_count_mismatch(tmp_path):
     report = verify_structural(TINY_BOOK, out, plan)
     assert not report.passed
     assert any("page count" in f.lower() for f in report.failures())
+
+
+def test_verify_visual_passes_on_identical_pdf(tmp_path):
+    # Copying the same PDF should produce 0 pixel diffs.
+    out = tmp_path / "copy.pdf"
+    shutil.copy(TINY_BOOK, out)
+    from unsubsetter.verifier import verify_visual
+    report = verify_visual(TINY_BOOK, out, num_pages=1, seed=0)
+    assert report.passed, report.failures()
+
+
+def test_verify_visual_flags_obviously_different_pdf(tmp_path):
+    # Construct a deliberately different PDF (blank a page).
+    out = tmp_path / "different.pdf"
+    with pikepdf.open(TINY_BOOK) as pdf:
+        page = pdf.pages[0]
+        page.Contents = pdf.make_stream(b"")
+        pdf.save(out)
+    from unsubsetter.verifier import verify_visual
+    report = verify_visual(TINY_BOOK, out, num_pages=1, seed=0)
+    assert not report.passed

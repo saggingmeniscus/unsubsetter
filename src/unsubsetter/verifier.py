@@ -2,8 +2,12 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
+import random
+import subprocess
+import tempfile
 
 import pikepdf
+from PIL import Image, ImageChops
 
 from unsubsetter.inspector import inspect_pdf
 from unsubsetter.planner import Plan, Replace
@@ -84,3 +88,76 @@ def verify_structural(
     orig_pdf.close()
     mod_pdf.close()
     return report
+
+
+def verify_visual(
+    original_path: Path,
+    modified_path: Path,
+    num_pages: int,
+    seed: int | None = None,
+    max_pixel_diff: int = 3,
+    max_diff_ratio: float = 0.001,
+) -> VerificationReport:
+    """Render N random pages from both PDFs and pixel-diff them.
+
+    Returns a VerificationReport with one check per sampled page.
+    """
+    report = VerificationReport()
+    rng = random.Random(seed)
+    with pikepdf.open(original_path) as pdf:
+        total_pages = len(pdf.pages)
+    if total_pages == 0:
+        report.add("visual: page count > 0", False, "0 pages")
+        return report
+
+    sample_size = min(num_pages, total_pages)
+    pages = sorted(rng.sample(range(1, total_pages + 1), sample_size))
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        for page_num in pages:
+            orig_png = _render_page(original_path, page_num, td_path / f"orig_{page_num}")
+            mod_png = _render_page(modified_path, page_num, td_path / f"mod_{page_num}")
+            if orig_png is None or mod_png is None:
+                report.add(f"page {page_num} render", False, "pdftoppm failed")
+                continue
+            ok, detail = _images_match(orig_png, mod_png, max_pixel_diff, max_diff_ratio)
+            report.add(f"page {page_num} visual diff", ok, detail)
+    return report
+
+
+def _render_page(pdf_path: Path, page: int, prefix: Path) -> Path | None:
+    """Render one page to PNG at 150 DPI via pdftoppm. Returns the PNG path or None."""
+    try:
+        subprocess.run(
+            ["pdftoppm", "-r", "150", "-f", str(page), "-l", str(page),
+             "-png", str(pdf_path), str(prefix)],
+            check=True, capture_output=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    # pdftoppm appends -NN.png; the digit count varies with total pages.
+    candidates = list(prefix.parent.glob(prefix.name + "-*.png"))
+    return candidates[0] if candidates else None
+
+
+def _images_match(
+    a_path: Path, b_path: Path, max_pixel_diff: int, max_diff_ratio: float,
+) -> tuple[bool, str]:
+    a = Image.open(a_path).convert("RGB")
+    b = Image.open(b_path).convert("RGB")
+    if a.size != b.size:
+        return False, f"size mismatch {a.size} vs {b.size}"
+    diff = ImageChops.difference(a, b)
+    bbox = diff.getbbox()
+    if bbox is None:
+        return True, "identical"
+    # Count pixels with any channel > max_pixel_diff.
+    diffs = sum(
+        1 for px in diff.crop(bbox).get_flattened_data() if max(px) > max_pixel_diff
+    )
+    total = a.size[0] * a.size[1]
+    ratio = diffs / total
+    if ratio <= max_diff_ratio:
+        return True, f"{diffs}/{total} differing pixels (ratio {ratio:.4%})"
+    return False, f"{diffs}/{total} differing pixels (ratio {ratio:.4%})"
