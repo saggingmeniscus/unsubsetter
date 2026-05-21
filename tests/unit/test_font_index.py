@@ -104,3 +104,12 @@ def test_font_index_recurses_into_subdirectories(make_ttf, tmp_path):
     src.rename(subdir / src.name)
     idx = FontIndex.build([tmp_path])
     assert idx.lookup("NestedFont") is not None
+
+
+from unsubsetter.font_index import default_search_paths
+
+
+def test_default_search_paths_returns_existing_dirs():
+    # Smoke test: at least one path exists on this dev machine (macOS).
+    paths = default_search_paths()
+    assert all(p.exists() for p in paths)

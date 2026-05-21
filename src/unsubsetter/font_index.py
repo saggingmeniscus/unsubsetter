@@ -93,3 +93,21 @@ class FontIndex:
 
     def __len__(self) -> int:
         return len({id(e) for e in self._by_key.values()})
+
+
+def default_search_paths() -> list[Path]:
+    """Standard font locations on macOS, plus TeX Live trees if present."""
+    home = Path.home()
+    candidates = [
+        home / "Library/Fonts",
+        Path("/Library/Fonts"),
+        Path("/System/Library/Fonts/Supplemental"),
+        Path("/System/Library/Fonts"),
+    ]
+    # Add discovered TeX Live font roots
+    for tl_root in sorted(Path("/usr/local/texlive").glob("*/texmf-dist/fonts")):
+        for sub in ("opentype", "truetype"):
+            p = tl_root / sub
+            if p.exists():
+                candidates.append(p)
+    return [p for p in candidates if p.exists()]
