@@ -13,5 +13,7 @@ Regenerate from `tiny_book.tex`:
 
 Requirements to regenerate: XeLaTeX (TeX Live) and the `EB Garamond` font
 installed system-wide (the user has `~/Library/Fonts/EBGaramond-Regular.ttf`).
-If you substitute a different font, update the `EXPECTED_SUBSET_FONT_PS_NAME`
-constant in `tests/integration/test_pipeline.py`.
+If you substitute a different font, search the test files for `ebgaramond`
+(case-insensitive substring used by `tests/unit/test_inspector.py`,
+`tests/unit/test_applier.py`, `tests/unit/test_verifier.py`, and
+`tests/integration/test_pipeline.py`) and update accordingly.

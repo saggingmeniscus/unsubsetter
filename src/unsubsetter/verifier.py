@@ -153,8 +153,10 @@ def _images_match(
     if bbox is None:
         return True, "identical"
     # Count pixels with any channel > max_pixel_diff.
+    # getdata() is the long-standing public API; get_flattened_data() exists
+    # only in Pillow >= 12.1 and would break users on older Pillows.
     diffs = sum(
-        1 for px in diff.crop(bbox).get_flattened_data() if max(px) > max_pixel_diff
+        1 for px in diff.crop(bbox).getdata() if max(px) > max_pixel_diff
     )
     total = a.size[0] * a.size[1]
     ratio = diffs / total
