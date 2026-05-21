@@ -21,3 +21,39 @@ def test_split_subset_prefix_must_be_uppercase():
 
 def test_split_subset_prefix_with_spaces_in_name():
     assert split_subset_prefix("ZILMPO+Horst Regular") == ("ZILMPO", "Horst Regular")
+
+
+from pathlib import Path
+
+import pikepdf
+
+from unsubsetter.inspector import FontRecord, inspect_pdf
+
+
+TINY_BOOK = Path(__file__).parent.parent / "fixtures" / "tiny_book.pdf"
+
+
+def test_inspect_pdf_finds_subset_font():
+    with pikepdf.open(TINY_BOOK) as pdf:
+        records = inspect_pdf(pdf)
+    assert len(records) >= 1
+    # tiny_book.pdf uses EB Garamond, which XeLaTeX subsets.
+    eb = next(
+        (r for r in records if r.ps_name.lower().startswith("ebgaramond")),
+        None,
+    )
+    assert eb is not None, f"EBGaramond not found in {[r.ps_name for r in records]}"
+    assert eb.subset_prefix is not None
+    assert len(eb.subset_prefix) == 6
+    assert eb.subtype == "Type0"
+    assert eb.descendant_subtype == "CIDFontType2"
+    assert eb.has_font_file is True
+    assert eb.font_file_kind == "FontFile2"
+
+
+def test_inspect_pdf_used_cids_nonempty_for_text_font():
+    with pikepdf.open(TINY_BOOK) as pdf:
+        records = inspect_pdf(pdf)
+    eb = next(r for r in records if r.ps_name.lower().startswith("ebgaramond"))
+    # The fixture document has English text so we expect CIDs to be present.
+    assert len(eb.used_cids) > 0
