@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Union
 
+from unsubsetter.font_index import FontIndex, normalize_name
 from unsubsetter.inspector import FontRecord
 
 
@@ -47,9 +48,6 @@ class Plan:
         skips = len(self.skips())
         header = f"Plan: {replaces} replace, {skips} skip"
         return header + "\n" + "\n".join(lines)
-
-
-from unsubsetter.font_index import FontIndex, normalize_name
 
 
 def build_plan(

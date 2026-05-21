@@ -33,8 +33,6 @@ def _fake_record(ps_name: str, subset_prefix: str | None):
     )
 
 
-from unittest.mock import MagicMock
-
 from unsubsetter.planner import build_plan
 from unsubsetter.font_index import FontIndex, FontIndexEntry
 
