@@ -46,3 +46,50 @@ def read_font_entries(path: Path) -> list[FontIndexEntry]:
         tt = TTFont(str(path))
         return [_entry_from_ttfont(tt, path, None)]
     return []
+
+
+from collections.abc import Iterable
+
+
+class FontIndex:
+    """A lookup table from normalized font names to FontIndexEntry."""
+
+    _FONT_EXTS = {".ttf", ".otf", ".ttc"}
+
+    def __init__(self, entries_by_key: dict[str, FontIndexEntry]):
+        self._by_key = entries_by_key
+
+    @classmethod
+    def build(cls, search_paths: Iterable[Path]) -> "FontIndex":
+        by_key: dict[str, FontIndexEntry] = {}
+        for root in search_paths:
+            root = Path(root)
+            if not root.exists():
+                continue
+            for path in root.rglob("*"):
+                if path.suffix.lower() not in cls._FONT_EXTS:
+                    continue
+                try:
+                    entries = read_font_entries(path)
+                except Exception:
+                    # A corrupt font file shouldn't break the index build.
+                    continue
+                for e in entries:
+                    for key in cls._keys_for(e):
+                        by_key.setdefault(key, e)
+        return cls(by_key)
+
+    @staticmethod
+    def _keys_for(e: FontIndexEntry) -> list[str]:
+        keys = []
+        for raw in (e.ps_name, e.full_name, f"{e.family} {e.subfamily}".strip()):
+            n = normalize_name(raw)
+            if n:
+                keys.append(n)
+        return keys
+
+    def lookup(self, name: str) -> FontIndexEntry | None:
+        return self._by_key.get(normalize_name(name))
+
+    def __len__(self) -> int:
+        return len({id(e) for e in self._by_key.values()})
