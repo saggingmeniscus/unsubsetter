@@ -37,7 +37,7 @@ Before uploading to KDP, run the following on the production PDF:
 
 1. **Inspect:**
    ```
-   uv run unsubsetter ~/git/books/the_coast_of_everything/the_coast_of_everything.pdf
+   uv run unsubsetter ~/books/myproject/interior.pdf
    ```
    Confirm the plan covers Preciosa (the font KDP flagged). Note any `SKIP` lines
    that mention missing-on-disk fonts and resolve them before proceeding.
@@ -45,13 +45,13 @@ Before uploading to KDP, run the following on the production PDF:
 2. **Fix with visual sampling:**
    ```
    uv run unsubsetter --fix --verify-visual 10 \
-     ~/git/books/the_coast_of_everything/the_coast_of_everything.pdf
+     ~/books/myproject/interior.pdf
    ```
-   This writes `the_coast_of_everything.unsubset.pdf`.
+   This writes `interior.unsubset.pdf`.
 
 3. **Independent structural check:**
    ```
-   pdffonts the_coast_of_everything.unsubset.pdf
+   pdffonts interior.unsubset.pdf
    ```
    Confirm `sub=no` on Preciosa and every other previously-subset CID TrueType.
 
