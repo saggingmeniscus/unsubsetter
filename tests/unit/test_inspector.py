@@ -57,3 +57,14 @@ def test_inspect_pdf_used_cids_nonempty_for_text_font():
     eb = next(r for r in records if r.ps_name.lower().startswith("ebgaramond"))
     # The fixture document has English text so we expect CIDs to be present.
     assert len(eb.used_cids) > 0
+
+
+def test_inspect_pdf_does_not_return_cid_descendants_as_top_level():
+    with pikepdf.open(TINY_BOOK) as pdf:
+        records = inspect_pdf(pdf)
+    # Every returned record must be a top-level font subtype, not a descendant.
+    for r in records:
+        assert r.subtype not in ("CIDFontType0", "CIDFontType2"), (
+            f"inspect_pdf returned a CID descendant as a top-level record: "
+            f"{r.ps_name} {r.subtype}"
+        )

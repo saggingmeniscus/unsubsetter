@@ -108,6 +108,8 @@ def inspect_pdf(pdf: pikepdf.Pdf) -> list[FontRecord]:
         base_font = _stringify_name(obj.get("/BaseFont"))
         subset_prefix, ps_name = split_subset_prefix(base_font)
         subtype = _stringify_name(obj.get("/Subtype"))
+        if subtype in ("CIDFontType0", "CIDFontType2"):
+            continue
         encoding_obj = obj.get("/Encoding")
         encoding = _stringify_name(encoding_obj) if encoding_obj is not None else ""
 
