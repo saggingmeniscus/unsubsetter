@@ -1,9 +1,17 @@
 # unsubsetter
 
-Re-embed full (non-subset) fonts in PDFs so Amazon KDP's preflight check accepts them.
+Re-embed full (non-subset) versions of fonts in PDFs.
 
-V1 handles **CID TrueType fonts only.** CFF (CIDFontType0) and simple Type 1 fonts
-are reported but skipped.
+PDF generators often *subset* embedded fonts, keeping only the glyphs a
+document uses and marking the font's PostScript name with a six-letter
+`ABCDEF+` prefix. Some preflight checkers treat subsetted fonts as "not
+embedded" even though they are. `unsubsetter` swaps each subset for the
+complete font found on disk. It was built to get a book past Amazon
+KDP's preflight check, but applies to any PDF that needs non-subsetted
+embedded fonts.
+
+V1 handles **CID TrueType fonts only.** Other font types are detected and
+reported, but left unchanged — see [Limitations](#limitations).
 
 ## Install
 
@@ -31,49 +39,51 @@ Fix (writes `book.unsubset.pdf` by default):
 
 Filter to specific fonts:
 
-    unsubsetter --fix --only Preciosa,Janson book.pdf
+    unsubsetter --fix --only Garamond,Helvetica book.pdf
 
 With visual verification (renders N random pages and pixel-diffs them):
 
     unsubsetter --fix --verify-visual 10 book.pdf
 
-## Acceptance procedure (manual — pre-KDP gate)
+## Example: preparing a PDF for Amazon KDP
 
-Before uploading to KDP, run the following on the production PDF:
+KDP's preflight check is the use case this tool was built for — it can
+reject a PDF whose fonts look un-embedded, which subsetting may trigger.
+A careful pre-upload pass:
 
-1. **Inspect:**
+1. **Inspect** (default mode, no writes):
    ```
-   unsubsetter ~/books/myproject/interior.pdf
+   unsubsetter interior.pdf
    ```
-   Confirm the plan covers Preciosa (the font KDP flagged). Note any `SKIP` lines
-   that mention missing-on-disk fonts and resolve them before proceeding.
+   Confirm the plan covers the font KDP flagged. Resolve any surprising
+   `SKIP` lines — e.g. a font that can't be found on disk — first.
 
 2. **Fix with visual sampling:**
    ```
-   unsubsetter --fix --verify-visual 10 \
-     ~/books/myproject/interior.pdf
+   unsubsetter --fix --verify-visual 10 interior.pdf
    ```
-   This writes `interior.unsubset.pdf`.
+   This writes `interior.unsubset.pdf` and pixel-diffs 10 random pages
+   against the original.
 
 3. **Independent structural check:**
    ```
    pdffonts interior.unsubset.pdf
    ```
-   Confirm `sub=no` on Preciosa and every other previously-subset CID TrueType.
+   Confirm `sub=no` on every previously-subset CID TrueType font.
 
-4. **Spot-check 5 pages visually** in Preview/Acrobat — focus on:
-   - Pages with drop caps (uses CFF fonts skipped by V1; should look identical)
-   - Pages with math symbols (CMSY7 — also skipped)
-   - Heavy-text body pages (Janson Roman/Italic)
+4. **Spot-check a few pages** in a PDF viewer, paying attention to pages
+   that use fonts the tool reported as skipped — those pass through
+   unchanged and should look identical.
 
-5. **Upload to KDP.** If it bounces again on a *different* font, run unsubsetter
-   again with `--only THAT_FONT` to test in isolation, or report the issue.
+5. **Upload to KDP.** If it flags a *different* font, re-run with
+   `--only THAT_FONT` to test it in isolation, or report the issue.
 
-## Out-of-scope fallbacks (V2 candidates)
+## Limitations
 
-The two CFF fonts (`P22PreissigCalligraphic`, `BradleyInitials`) appear only on
-drop-cap pages. If KDP rejects those, the V1 workaround is to splice in
-outlined versions of just those pages.
+Re-embedding CFF (`CIDFontType0`) and simple Type 1 fonts isn't supported
+yet — those are planned for a later version. If a preflight checker flags
+one of them in the meantime, outlining it (converting the affected glyphs
+to vector paths) is the usual workaround.
 
 ## Development
 
