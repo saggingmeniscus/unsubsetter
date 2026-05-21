@@ -24,3 +24,32 @@ def test_make_ttf_fixture_produces_valid_ttf(make_ttf):
     path = make_ttf("test.ttf", ps_name="TestPSName")
     tt = TTFont(str(path))
     assert tt["name"].getDebugName(6) == "TestPSName"
+
+
+from pathlib import Path
+
+from unsubsetter.font_index import FontIndexEntry, read_font_entries
+
+
+def test_read_font_entries_single_ttf(make_ttf):
+    path = make_ttf("foo.ttf", ps_name="MyFontPS", family="MyFamily", subfamily="Bold")
+    entries = read_font_entries(path)
+    assert len(entries) == 1
+    e = entries[0]
+    assert isinstance(e, FontIndexEntry)
+    assert e.path == path
+    assert e.ttc_face is None
+    assert e.ps_name == "MyFontPS"
+    assert e.family == "MyFamily"
+    assert e.subfamily == "Bold"
+
+
+def test_read_font_entries_ttc_yields_one_per_face(make_ttc):
+    path = make_ttc("bundle.ttc", faces=[
+        {"ps_name": "FaceA", "family": "F", "subfamily": "Regular"},
+        {"ps_name": "FaceB", "family": "F", "subfamily": "Bold"},
+    ])
+    entries = read_font_entries(path)
+    assert len(entries) == 2
+    assert {e.ps_name for e in entries} == {"FaceA", "FaceB"}
+    assert {e.ttc_face for e in entries} == {0, 1}
