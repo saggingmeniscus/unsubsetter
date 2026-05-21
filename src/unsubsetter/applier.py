@@ -1,5 +1,7 @@
 """Applier: executes a Plan on a pikepdf Pdf."""
 from __future__ import annotations
+import os
+import tempfile
 from io import BytesIO
 from pathlib import Path
 
@@ -7,7 +9,7 @@ from fontTools.ttLib import TTFont
 
 import pikepdf
 
-from unsubsetter.planner import Replace
+from unsubsetter.planner import Plan, Replace
 
 
 def load_full_font_bytes(path: Path, ttc_face: int | None) -> bytes:
@@ -124,3 +126,26 @@ def _update_descriptor_metrics(descriptor: pikepdf.Object, tt: TTFont) -> None:
     # StemV is hard to compute exactly; PDF readers don't strictly require it.
     # 80 is a conventional placeholder for regular weight, 120 for bold.
     descriptor["/StemV"] = 80
+
+
+def run_plan(pdf: pikepdf.Pdf, plan: Plan, output_path: Path) -> None:
+    """Apply every Replace action in the plan, then write the PDF atomically."""
+    for action in plan.actions:
+        if isinstance(action, Replace):
+            apply_replace(pdf, action)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=output_path.stem + ".",
+        suffix=".tmp.pdf",
+        dir=str(output_path.parent),
+    )
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        pdf.save(str(tmp_path))
+        os.replace(tmp_path, output_path)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise

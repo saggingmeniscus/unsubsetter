@@ -76,3 +76,21 @@ def test_apply_replace_on_tiny_book():
         fd = desc["/FontDescriptor"]
         assert "/Ascent" in fd
         assert "/Descent" in fd
+
+
+def test_run_plan_writes_output_atomically(tmp_path):
+    eb_path = _ebgaramond_path()
+    out = tmp_path / "out.pdf"
+    from unsubsetter.applier import run_plan
+    from unsubsetter.planner import Plan, Replace
+    with pikepdf.open(TINY_BOOK) as pdf:
+        records = inspect_pdf(pdf)
+        eb = next(r for r in records if r.ps_name.lower().startswith("ebgaramond"))
+        plan = Plan(actions=[Replace(eb, eb_path, None)])
+        run_plan(pdf, plan, out)
+    assert out.exists()
+    # Re-open and verify the change persisted.
+    with pikepdf.open(out) as pdf2:
+        records2 = inspect_pdf(pdf2)
+        eb2 = next(r for r in records2 if r.ps_name.lower().startswith("ebgaramond"))
+        assert eb2.subset_prefix is None
