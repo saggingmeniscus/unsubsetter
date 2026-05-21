@@ -37,15 +37,32 @@ def _entry_from_ttfont(tt: TTFont, path: Path, ttc_face: int | None) -> FontInde
 
 
 def read_font_entries(path: Path) -> list[FontIndexEntry]:
-    """Parse a font file and return one FontIndexEntry per contained face."""
+    """Parse a font file and return one FontIndexEntry per contained face.
+
+    Uses fontTools' lazy mode and closes each TTFont after extracting names;
+    eager loading on large TTC files (e.g., /System/Library/Fonts/*.ttc, some of
+    which are 50–180 MB) caused 2.7 GB peak RSS and minutes of wall time on
+    a full default-path scan. With lazy=True + close, the same scan finishes in
+    ~2 s and uses a few tens of MB.
+    """
     suffix = path.suffix.lower()
+    entries: list[FontIndexEntry] = []
     if suffix == ".ttc":
-        coll = TTCollection(str(path))
-        return [_entry_from_ttfont(tt, path, i) for i, tt in enumerate(coll.fonts)]
-    if suffix in (".ttf", ".otf"):
-        tt = TTFont(str(path))
-        return [_entry_from_ttfont(tt, path, None)]
-    return []
+        # Probe the face count once via TTCollection, then open each face
+        # independently with TTFont(path, fontNumber=i, lazy=True). Opening
+        # each face on its own file handle lets us close them cleanly without
+        # invalidating the others.
+        with open(path, "rb") as f:
+            face_count = len(TTCollection(f, lazy=True).fonts)
+        for i in range(face_count):
+            tt = TTFont(str(path), fontNumber=i, lazy=True)
+            entries.append(_entry_from_ttfont(tt, path, i))
+            tt.close()
+    elif suffix in (".ttf", ".otf"):
+        tt = TTFont(str(path), lazy=True)
+        entries.append(_entry_from_ttfont(tt, path, None))
+        tt.close()
+    return entries
 
 
 from collections.abc import Iterable
@@ -104,7 +121,7 @@ def default_search_paths() -> list[Path]:
         Path("/System/Library/Fonts/Supplemental"),
         Path("/System/Library/Fonts"),
     ]
-    # Add discovered TeX Live font roots
+    # Add discovered TeX Live font roots.
     for tl_root in sorted(Path("/usr/local/texlive").glob("*/texmf-dist/fonts")):
         for sub in ("opentype", "truetype"):
             p = tl_root / sub
