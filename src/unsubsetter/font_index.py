@@ -1,10 +1,13 @@
 """Font index: scans font search paths and resolves font names to disk files."""
 from __future__ import annotations
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from fontTools.ttLib import TTFont, TTCollection
+
+_log = logging.getLogger(__name__)
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
@@ -88,8 +91,11 @@ class FontIndex:
                     continue
                 try:
                     entries = read_font_entries(path)
-                except Exception:
-                    # A corrupt font file shouldn't break the index build.
+                except Exception as exc:
+                    # A corrupt or unrecognised font file shouldn't break the
+                    # whole index build, but the user should be able to see
+                    # what was skipped (and why) by running with -v.
+                    _log.warning("skipping %s: %s", path, exc)
                     continue
                 for e in entries:
                     for key in cls._keys_for(e):

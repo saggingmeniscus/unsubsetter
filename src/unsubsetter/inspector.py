@@ -1,10 +1,13 @@
 """PDF inspector: enumerate font records from a pikepdf Pdf."""
 from __future__ import annotations
+import logging
 import re
 from dataclasses import dataclass
 from collections import defaultdict
 
 import pikepdf
+
+_log = logging.getLogger(__name__)
 
 _SUBSET_PREFIX_RE = re.compile(r"^([A-Z]{6})\+(.+)$")
 
@@ -57,10 +60,14 @@ def _collect_used_cids(pdf: pikepdf.Pdf) -> dict[int, set[int]]:
     "(...) Tj" with bytes that are 2-byte big-endian CIDs under Identity-H.
     """
     result: dict[int, set[int]] = defaultdict(set)
-    for page in pdf.pages:
+    for page_num, page in enumerate(pdf.pages, start=1):
         try:
             instructions = list(pikepdf.parse_content_stream(page))
-        except Exception:
+        except Exception as exc:
+            # A bad content stream means CIDs from that page won't be counted
+            # toward any font's /W rebuild. Surface it via -v so the user
+            # knows why a width array might be undersized.
+            _log.warning("page %d: skipping unparseable content stream: %s", page_num, exc)
             continue
         # Build {resource_name -> font_obj} for this page.
         resources = page.get("/Resources", pikepdf.Dictionary())

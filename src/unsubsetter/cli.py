@@ -1,5 +1,6 @@
 """CLI entry point."""
 from __future__ import annotations
+import logging
 import sys
 from pathlib import Path
 
@@ -45,6 +46,10 @@ def cli(
     verbose: bool,
 ) -> None:
     """Re-embed full (non-subset) fonts in a PDF."""
+    logging.basicConfig(
+        level=logging.WARNING if verbose else logging.ERROR,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
     search_paths = default_search_paths() + list(font_paths)
     if verbose:
         click.echo(f"Building font index from {len(search_paths)} paths…", err=True)

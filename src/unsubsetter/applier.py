@@ -9,6 +9,7 @@ from fontTools.ttLib import TTFont
 
 import pikepdf
 
+from unsubsetter.errors import UnsupportedFontError
 from unsubsetter.planner import Plan, Replace
 
 
@@ -28,6 +29,21 @@ def apply_replace(pdf: pikepdf.Pdf, action: Replace) -> None:
     """Execute a single Replace action against the open pikepdf.Pdf in place."""
     full_bytes = load_full_font_bytes(action.source_path, action.ttc_face)
     full_tt = TTFont(BytesIO(full_bytes))
+
+    # Validate the disk font covers every CID the PDF actually uses. The
+    # /Identity CIDToGIDMap relies on subset-CID == full-font-GID; if the disk
+    # font lacks a referenced GID, the rendered glyph would silently become
+    # blank with zero advance width. Better to refuse and let the user pick a
+    # different font than corrupt the output.
+    glyph_count = len(full_tt.getGlyphOrder())
+    if action.record.used_cids and max(action.record.used_cids) >= glyph_count:
+        raise UnsupportedFontError(
+            f"disk font {action.source_path} has {glyph_count} glyphs but the "
+            f"PDF references CID {max(action.record.used_cids)} for "
+            f"{action.record.ps_name}; the file on disk is a different version "
+            f"of the font than the one originally embedded — exclude this font "
+            f"with --exclude or supply the correct file via --font-path."
+        )
 
     font_obj = action.record.font_obj
     descendant = font_obj["/DescendantFonts"][0]
