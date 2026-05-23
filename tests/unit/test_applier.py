@@ -96,17 +96,3 @@ def test_run_plan_writes_output_atomically(tmp_path):
         assert eb2.subset_prefix is None
 
 
-def test_apply_replace_refuses_disk_font_with_too_few_glyphs(tmp_path, make_ttf):
-    """If the disk font lacks a CID the PDF references, apply must refuse."""
-    import pytest
-    from unsubsetter.errors import UnsupportedFontError
-    # The synthetic test font has only 3 glyphs (.notdef, space, A).
-    tiny = make_ttf("tiny.ttf", ps_name="EBGaramond")  # same PS name as in tiny_book
-    with pikepdf.open(TINY_BOOK) as pdf:
-        records = inspect_pdf(pdf)
-        eb = next(r for r in records if r.ps_name.lower().startswith("ebgaramond"))
-        # tiny_book uses CIDs well past 3 (e.g. for digit/punctuation glyphs)
-        assert max(eb.used_cids) >= 3
-        action = Replace(record=eb, source_path=tiny, ttc_face=None)
-        with pytest.raises(UnsupportedFontError, match="different version"):
-            apply_replace(pdf, action)

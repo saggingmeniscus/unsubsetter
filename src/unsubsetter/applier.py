@@ -2,6 +2,7 @@
 from __future__ import annotations
 import os
 import tempfile
+from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 from typing import Callable
@@ -14,6 +15,7 @@ from unsubsetter.errors import UnsupportedFontError
 from unsubsetter.planner import Plan, Replace
 
 ApplierFn = Callable[[pikepdf.Pdf, "Replace"], None]
+ValidatorFn = Callable[["Replace"], None]
 
 
 def load_full_font_bytes(path: Path, ttc_face: int | None) -> bytes:
@@ -29,24 +31,9 @@ def load_full_font_bytes(path: Path, ttc_face: int | None) -> bytes:
 
 
 def apply_truetype_cid_replace(pdf: pikepdf.Pdf, action: Replace) -> None:
-    """Execute a single Replace action against the open pikepdf.Pdf in place."""
+    """Execute a CID TrueType Replace; assumes Validate has already run."""
     full_bytes = load_full_font_bytes(action.source_path, action.ttc_face)
     full_tt = TTFont(BytesIO(full_bytes))
-
-    # Validate the disk font covers every CID the PDF actually uses. The
-    # /Identity CIDToGIDMap relies on subset-CID == full-font-GID; if the disk
-    # font lacks a referenced GID, the rendered glyph would silently become
-    # blank with zero advance width. Better to refuse and let the user pick a
-    # different font than corrupt the output.
-    glyph_count = len(full_tt.getGlyphOrder())
-    if action.record.used_cids and max(action.record.used_cids) >= glyph_count:
-        raise UnsupportedFontError(
-            f"disk font {action.source_path} has {glyph_count} glyphs but the "
-            f"PDF references CID {max(action.record.used_cids)} for "
-            f"{action.record.ps_name}; the file on disk is a different version "
-            f"of the font than the one originally embedded — exclude this font "
-            f"with --exclude or supply the correct file via --font-path."
-        )
 
     font_obj = action.record.font_obj
     descendant = font_obj["/DescendantFonts"][0]
@@ -89,6 +76,71 @@ def apply_replace(pdf: pikepdf.Pdf, action: Replace) -> None:
             f"this Replace action should not have been built — planner bug"
         )
     applier(pdf, action)
+
+
+@dataclass
+class ValidationReport:
+    failures: list[tuple[Replace, str]] = field(default_factory=list)
+
+    @property
+    def passed(self) -> bool:
+        return not self.failures
+
+    def render(self) -> str:
+        if not self.failures:
+            return "  (no validation failures)"
+        lines = []
+        for action, msg in self.failures:
+            name = action.record.ps_name if action is not None else "?"
+            lines.append(f"  [FAIL] {name}: {msg}")
+        return "\n".join(lines)
+
+
+def validate_plan(plan: Plan) -> ValidationReport:
+    """Run per-font correctness checks for every Replace action.
+
+    Returns a ValidationReport; passed=True iff no failures. Skip actions
+    are ignored.
+    """
+    report = ValidationReport()
+    for action in plan.actions:
+        if not isinstance(action, Replace):
+            continue
+        try:
+            _validate_one(action)
+        except UnsupportedFontError as exc:
+            report.failures.append((action, str(exc)))
+    return report
+
+
+def _validate_one(action: Replace) -> None:
+    key = (action.record.subtype, action.record.descendant_subtype)
+    validator = _VALIDATORS.get(key)
+    if validator is None:
+        raise UnsupportedFontError(
+            f"no validator registered for {key} (font: {action.record.ps_name})"
+        )
+    validator(action)
+
+
+def _validate_truetype_replace(action: Replace) -> None:
+    """Refuse if the disk font lacks any CID the PDF references."""
+    full_bytes = load_full_font_bytes(action.source_path, action.ttc_face)
+    full_tt = TTFont(BytesIO(full_bytes))
+    glyph_count = len(full_tt.getGlyphOrder())
+    if action.record.used_cids and max(action.record.used_cids) >= glyph_count:
+        raise UnsupportedFontError(
+            f"disk font {action.source_path} has {glyph_count} glyphs but the "
+            f"PDF references CID {max(action.record.used_cids)} for "
+            f"{action.record.ps_name}; the file on disk is a different version "
+            f"of the font than the one originally embedded — exclude this font "
+            f"with --exclude or supply the correct file via --font-path."
+        )
+
+
+_VALIDATORS: dict[tuple[str, str | None], ValidatorFn] = {
+    ("Type0", "CIDFontType2"): _validate_truetype_replace,
+}
 
 
 def _strip_subset_prefix(obj: pikepdf.Object, key: str) -> None:
