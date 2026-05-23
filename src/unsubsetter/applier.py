@@ -4,6 +4,7 @@ import os
 import tempfile
 from io import BytesIO
 from pathlib import Path
+from typing import Callable
 
 from fontTools.ttLib import TTFont
 
@@ -11,6 +12,8 @@ import pikepdf
 
 from unsubsetter.errors import UnsupportedFontError
 from unsubsetter.planner import Plan, Replace
+
+ApplierFn = Callable[[pikepdf.Pdf, "Replace"], None]
 
 
 def load_full_font_bytes(path: Path, ttc_face: int | None) -> bytes:
@@ -25,7 +28,7 @@ def load_full_font_bytes(path: Path, ttc_face: int | None) -> bytes:
     return buf.getvalue()
 
 
-def apply_replace(pdf: pikepdf.Pdf, action: Replace) -> None:
+def apply_truetype_cid_replace(pdf: pikepdf.Pdf, action: Replace) -> None:
     """Execute a single Replace action against the open pikepdf.Pdf in place."""
     full_bytes = load_full_font_bytes(action.source_path, action.ttc_face)
     full_tt = TTFont(BytesIO(full_bytes))
@@ -69,6 +72,23 @@ def apply_replace(pdf: pikepdf.Pdf, action: Replace) -> None:
 
     # 5. Update FontDescriptor metrics.
     _update_descriptor_metrics(descriptor, full_tt)
+
+
+_APPLIERS: dict[tuple[str, str | None], ApplierFn] = {
+    ("Type0", "CIDFontType2"): apply_truetype_cid_replace,
+}
+
+
+def apply_replace(pdf: pikepdf.Pdf, action: Replace) -> None:
+    """Execute a single Replace action by dispatching on font subtype."""
+    key = (action.record.subtype, action.record.descendant_subtype)
+    applier = _APPLIERS.get(key)
+    if applier is None:
+        raise UnsupportedFontError(
+            f"no applier registered for {key} (font: {action.record.ps_name}); "
+            f"this Replace action should not have been built — planner bug"
+        )
+    applier(pdf, action)
 
 
 def _strip_subset_prefix(obj: pikepdf.Object, key: str) -> None:
