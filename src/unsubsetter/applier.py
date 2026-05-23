@@ -7,6 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Callable
 
+from fontTools.cffLib import CFFFontSet
 from fontTools.ttLib import TTFont
 
 import pikepdf
@@ -141,6 +142,32 @@ def _validate_truetype_replace(action: Replace) -> None:
 _VALIDATORS: dict[tuple[str, str | None], ValidatorFn] = {
     ("Type0", "CIDFontType2"): _validate_truetype_replace,
 }
+
+
+def _read_embedded_cff(record) -> CFFFontSet:
+    """Parse the /FontFile3 stream of a CIDFontType0 record into a CFFFontSet.
+
+    Handles both /Subtype variants:
+      - /CIDFontType0C: raw CFF bytes.
+      - /OpenType: an OTF wrapper; extract the CFF table.
+    """
+    descriptor = record.font_obj["/DescendantFonts"][0]["/FontDescriptor"]
+    file_obj = descriptor["/FontFile3"]
+    file_bytes = bytes(file_obj.read_bytes())
+    subtype = str(file_obj.get("/Subtype", "")).lstrip("/")
+
+    cff = CFFFontSet()
+    if subtype == "OpenType":
+        # OTF wrapper. Decompile via TTFont and pull the CFF table.
+        tt = TTFont(BytesIO(file_bytes))
+        if "CFF " not in tt:
+            raise UnsupportedFontError(
+                f"FontFile3 /Subtype OpenType but contains no CFF table "
+                f"for {record.ps_name}"
+            )
+        return tt["CFF "].cff
+    cff.decompile(BytesIO(file_bytes), otFont=None)
+    return cff
 
 
 def _strip_subset_prefix(obj: pikepdf.Object, key: str) -> None:
