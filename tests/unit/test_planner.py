@@ -67,7 +67,7 @@ def test_build_plan_skips_non_subset_font():
 def test_build_plan_skips_cff_font():
     rec = _fake_record_cff("BradleyInitials", subset_prefix="ABCDEF")
     plan = build_plan([rec], _idx_with("BradleyInitials"))
-    assert "CFF" in plan.skips()[0].reason
+    assert "CIDFontType0" in plan.skips()[0].reason
 
 
 def test_build_plan_skips_type1_font():

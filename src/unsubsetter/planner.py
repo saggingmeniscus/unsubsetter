@@ -50,6 +50,23 @@ class Plan:
         return header + "\n" + "\n".join(lines)
 
 
+_SUPPORTED_SUBTYPES: set[tuple[str, str | None]] = {
+    ("Type0", "CIDFontType2"),
+}
+
+
+def _eligibility_reason(rec: FontRecord) -> str | None:
+    """Return a Skip reason if the record is ineligible for Replace, else None.
+
+    Filter-based skips (--only/--exclude) are handled separately by build_plan.
+    """
+    if rec.subset_prefix is None:
+        return "not subsetted"
+    if (rec.subtype, rec.descendant_subtype) not in _SUPPORTED_SUBTYPES:
+        return f"unsupported type: {rec.subtype}/{rec.descendant_subtype or '-'}"
+    return None
+
+
 def build_plan(
     records: list[FontRecord],
     index: FontIndex,
@@ -62,25 +79,15 @@ def build_plan(
     actions: list[Action] = []
     for rec in records:
         ps_norm = normalize_name(rec.ps_name)
-
-        if rec.subset_prefix is None:
-            actions.append(Skip(rec, "not subsetted"))
+        reason = _eligibility_reason(rec)
+        if reason is not None:
+            actions.append(Skip(rec, reason))
             continue
         if only_norm and ps_norm not in only_norm:
             actions.append(Skip(rec, "not selected by --only"))
             continue
         if ps_norm in exclude_norm:
             actions.append(Skip(rec, "excluded by --exclude"))
-            continue
-        if rec.subtype == "Type1":
-            actions.append(Skip(rec, "unsupported type: Type1 (V1 handles CID TrueType only)"))
-            continue
-        if rec.subtype != "Type0" or rec.descendant_subtype != "CIDFontType2":
-            actions.append(Skip(
-                rec,
-                f"unsupported type: {rec.subtype}/{rec.descendant_subtype or '-'}"
-                f" (CFF or non-composite — V1 handles CID TrueType only)",
-            ))
             continue
 
         entry = index.lookup(rec.ps_name)
