@@ -78,6 +78,17 @@ def cli(
             click.echo("Nothing to replace; not writing output.", err=True)
             sys.exit(0)
 
+        from unsubsetter.applier import validate_plan
+        validation = validate_plan(plan)
+        if not validation.passed:
+            click.echo("\nValidation failures:", err=True)
+            click.echo(validation.render(), err=True)
+            click.echo(
+                "\nRe-run with --exclude FONT or --font-path PATH to resolve.",
+                err=True,
+            )
+            sys.exit(4)
+
         run_plan(pdf, plan, out_path)
         click.echo(f"Wrote {out_path}", err=True)
 
