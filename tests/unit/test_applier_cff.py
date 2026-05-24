@@ -230,3 +230,46 @@ def test_build_widths_array_cff_covers_used_cids():
         i += 2
     assert rec.used_cids.issubset(cids_present), \
         f"missing CIDs: {sorted(rec.used_cids - cids_present)}"
+
+
+from unsubsetter.applier import apply_cff_cid_replace
+
+
+def test_apply_cff_cid_replace_rewrites_font_dict():
+    disk = _tex_gyre_termes_path()
+    with pikepdf.open(TINY_BOOK_CFF) as pdf:
+        records = inspect_pdf(pdf)
+        rec = next(r for r in records if r.descendant_subtype == "CIDFontType0")
+        original_ff3_len = len(
+            rec.font_obj["/DescendantFonts"][0]["/FontDescriptor"]["/FontFile3"]
+            .read_bytes()
+        )
+        action = Replace(record=rec, source_path=disk, ttc_face=None)
+        apply_cff_cid_replace(pdf, action)
+
+        # 1. BaseFont prefix stripped on Type0, descendant, FontName.
+        assert "+" not in str(rec.font_obj["/BaseFont"])
+        desc = rec.font_obj["/DescendantFonts"][0]
+        assert "+" not in str(desc["/BaseFont"])
+        assert "+" not in str(desc["/FontDescriptor"]["/FontName"])
+
+        # 2. FontFile3 stream now larger (full font > subset) and tagged /OpenType.
+        descriptor = desc["/FontDescriptor"]
+        assert str(descriptor["/FontFile3"]["/Subtype"]) == "/OpenType"
+        new_len = len(descriptor["/FontFile3"].read_bytes())
+        assert new_len > original_ff3_len
+
+        # 3. No leftover /FontFile or /FontFile2.
+        assert "/FontFile" not in descriptor
+        assert "/FontFile2" not in descriptor
+
+        # 4. No /CIDToGIDMap was written.
+        assert "/CIDToGIDMap" not in desc
+
+        # 5. /W and /DW present.
+        assert "/W" in desc
+        assert "/DW" in desc
+
+        # 6. FontDescriptor has /Ascent, /Descent (sanity).
+        assert "/Ascent" in descriptor
+        assert "/Descent" in descriptor

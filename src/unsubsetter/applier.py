@@ -63,8 +63,48 @@ def apply_truetype_cid_replace(pdf: pikepdf.Pdf, action: Replace) -> None:
     _update_descriptor_metrics(descriptor, full_tt)
 
 
+def apply_cff_cid_replace(pdf: pikepdf.Pdf, action: Replace) -> None:
+    """Replace a subsetted CID CFF font with the full font on disk.
+
+    Assumes Validate has already run the glyph-correspondence check.
+    """
+    full_tt = TTFont(str(action.source_path))
+    buf = BytesIO()
+    full_tt.save(buf)
+    full_bytes = buf.getvalue()
+
+    font_obj = action.record.font_obj
+    descendant = font_obj["/DescendantFonts"][0]
+    descriptor = descendant["/FontDescriptor"]
+
+    # 1. Replace FontFile3 stream and tag as /OpenType.
+    descriptor["/FontFile3"] = pdf.make_stream(full_bytes)
+    descriptor["/FontFile3"]["/Subtype"] = pikepdf.Name("/OpenType")
+    # Defensive: a CIDFontType0 should not have /FontFile or /FontFile2; if it
+    # does, that's an inconsistent input — strip them.
+    for stale in ("/FontFile", "/FontFile2"):
+        if stale in descriptor:
+            del descriptor[stale]
+
+    # 2. Strip subset prefix from BaseFont on both dicts + FontName.
+    _strip_subset_prefix(font_obj, "/BaseFont")
+    _strip_subset_prefix(descendant, "/BaseFont")
+    _strip_subset_prefix(descriptor, "/FontName")
+
+    # 3. Rebuild /W and /DW from the full font's CFF.
+    descendant["/W"] = _build_widths_array_cff(full_tt, action.record.used_cids)
+    descendant["/DW"] = _default_width(full_tt)
+
+    # 4. Update FontDescriptor metrics — same logic as TrueType path.
+    _update_descriptor_metrics(descriptor, full_tt)
+
+    # No /CIDToGIDMap is written. CFF uses the embedded font's internal
+    # Charset for CID → GID; /CIDToGIDMap is a CIDFontType2-only mechanism.
+
+
 _APPLIERS: dict[tuple[str, str | None], ApplierFn] = {
     ("Type0", "CIDFontType2"): apply_truetype_cid_replace,
+    ("Type0", "CIDFontType0"): apply_cff_cid_replace,
 }
 
 
