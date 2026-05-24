@@ -23,6 +23,25 @@ def test_split_subset_prefix_with_spaces_in_name():
     assert split_subset_prefix("ZILMPO+Horst Regular") == ("ZILMPO", "Horst Regular")
 
 
+def test_split_subset_prefix_strips_identity_cmap_suffix():
+    """Type0 BaseFont may be <prefix>+<font-name>-<cmap-name>; strip the CMap part."""
+    from unsubsetter.inspector import split_subset_prefix
+    # Identity-H (the XeLaTeX CFF case)
+    assert split_subset_prefix("LHTESP+TeXGyreTermes-Regular-Identity-H") == (
+        "LHTESP", "TeXGyreTermes-Regular",
+    )
+    # Identity-V (vertical text)
+    assert split_subset_prefix("ABCDEF+SomeFont-Identity-V") == (
+        "ABCDEF", "SomeFont",
+    )
+    # No CMap suffix — unchanged
+    assert split_subset_prefix("ABCDEF+SomeFont") == ("ABCDEF", "SomeFont")
+    # No prefix, has CMap suffix
+    assert split_subset_prefix("SomeFont-Identity-H") == (None, "SomeFont")
+    # No prefix, no CMap suffix
+    assert split_subset_prefix("SomeFont") == (None, "SomeFont")
+
+
 from pathlib import Path
 
 import pikepdf

@@ -10,17 +10,26 @@ import pikepdf
 _log = logging.getLogger(__name__)
 
 _SUBSET_PREFIX_RE = re.compile(r"^([A-Z]{6})\+(.+)$")
+_CMAP_SUFFIXES = ("-Identity-H", "-Identity-V")
 
 
 def split_subset_prefix(base_font: str) -> tuple[str | None, str]:
     """Split a PostScript name into (subset_prefix, base_name).
 
     Returns (None, base_font) if no valid subset prefix is present.
+
+    Type0 fonts may have a CMap suffix appended to the BaseFont, e.g.
+    "LHTESP+TeXGyreTermes-Regular-Identity-H". The CMap suffix is stripped
+    so the returned base name matches the disk font's name-table
+    PostScript name (used for font index lookup).
     """
     m = _SUBSET_PREFIX_RE.match(base_font)
-    if m:
-        return m.group(1), m.group(2)
-    return None, base_font
+    prefix, name = (m.group(1), m.group(2)) if m else (None, base_font)
+    for suffix in _CMAP_SUFFIXES:
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+            break
+    return prefix, name
 
 
 @dataclass(frozen=True)
