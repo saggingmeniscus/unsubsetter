@@ -68,3 +68,31 @@ def test_verify_visual_flags_obviously_different_pdf(tmp_path):
     from unsubsetter.verifier import verify_visual
     report = verify_visual(TINY_BOOK, out, num_pages=1, seed=0)
     assert not report.passed
+
+
+TINY_BOOK_CFF = Path(__file__).parent.parent / "fixtures" / "tiny_book_cff.pdf"
+
+
+def _tex_gyre_termes_path():
+    p = Path(
+        "/usr/local/texlive/2025/texmf-dist/fonts/opentype/public/tex-gyre/"
+        "texgyretermes-regular.otf"
+    )
+    if not p.exists():
+        pytest.skip(f"TeX Gyre Termes not installed at {p}")
+    return p
+
+
+def test_verify_structural_pass_cff(tmp_path):
+    out = tmp_path / "out_cff.pdf"
+    with pikepdf.open(TINY_BOOK_CFF) as pdf:
+        records = inspect_pdf(pdf)
+        rec = next(r for r in records if r.descendant_subtype == "CIDFontType0")
+        plan = Plan(actions=[Replace(rec, _tex_gyre_termes_path(), None)])
+        run_plan(pdf, plan, out)
+    report = verify_structural(TINY_BOOK_CFF, out, plan)
+    assert report.passed, report.failures()
+    # Check that the CFF-specific assertions were exercised.
+    names = [n for n, _, _ in report.checks]
+    assert any("FontFile3 present" in n for n in names)
+    assert any("no leftover FontFile2" in n for n in names)

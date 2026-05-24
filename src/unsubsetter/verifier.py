@@ -80,10 +80,27 @@ def verify_structural(
             continue
         report.add(f"font {ps} prefix stripped", target.subset_prefix is None,
                    f"got prefix={target.subset_prefix}")
-        # CIDToGIDMap should now be /Identity.
         desc = target.font_obj["/DescendantFonts"][0]
-        cid_map = str(desc.get("/CIDToGIDMap", "")).strip()
-        report.add(f"font {ps} CIDToGIDMap=Identity", cid_map == "/Identity", cid_map)
+        descriptor = desc["/FontDescriptor"]
+
+        if target.descendant_subtype == "CIDFontType2":
+            cid_map = str(desc.get("/CIDToGIDMap", "")).strip()
+            report.add(
+                f"font {ps} CIDToGIDMap=Identity", cid_map == "/Identity", cid_map,
+            )
+            _check_font_stream_parses(report, ps, descriptor, "/FontFile2")
+        elif target.descendant_subtype == "CIDFontType0":
+            report.add(
+                f"font {ps} FontFile3 present",
+                "/FontFile3" in descriptor,
+                "missing /FontFile3" if "/FontFile3" not in descriptor else "",
+            )
+            report.add(
+                f"font {ps} no leftover FontFile2",
+                "/FontFile2" not in descriptor,
+                "stale /FontFile2 present" if "/FontFile2" in descriptor else "",
+            )
+            _check_font_stream_parses(report, ps, descriptor, "/FontFile3")
 
     orig_pdf.close()
     mod_pdf.close()
@@ -124,6 +141,17 @@ def verify_visual(
             ok, detail = _images_match(orig_png, mod_png, max_pixel_diff, max_diff_ratio)
             report.add(f"page {page_num} visual diff", ok, detail)
     return report
+
+
+def _check_font_stream_parses(report, ps, descriptor, key):
+    """Defensive guard: confirm the (post-write) font program parses."""
+    from io import BytesIO
+    from fontTools.ttLib import TTFont
+    try:
+        TTFont(BytesIO(bytes(descriptor[key].read_bytes())))
+        report.add(f"font {ps} {key.lstrip('/')} parseable", True)
+    except Exception as exc:
+        report.add(f"font {ps} {key.lstrip('/')} parseable", False, str(exc))
 
 
 def _render_page(pdf_path: Path, page: int, prefix: Path) -> Path | None:
