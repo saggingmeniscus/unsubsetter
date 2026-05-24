@@ -170,6 +170,36 @@ def _read_embedded_cff(record) -> CFFFontSet:
     return cff
 
 
+def _cid_to_glyph_name(cff: CFFFontSet) -> dict[int, str]:
+    """Build a {document_cid: glyph_name} map from a CFFFontSet.
+
+    Two CFF flavors are handled:
+      - CID-keyed CFF (has ROS): charset is a list of glyph names — typically
+        the conventional 'cidNNNNN' form, with '.notdef' at GID 0. The CID is
+        parsed out of the name. '.notdef' is excluded (content streams should
+        never reference it as a CID, and it would collide with the GID 0
+        entry of the name-keyed branch).
+      - Name-keyed CFF (no ROS): charset is a list of real glyph names. Under
+        PDF /CIDFontType0 wrapping with Identity-H, the document's CIDs are
+        the embedded font's GIDs directly, so we key by GID.
+    """
+    top = cff.topDictIndex[0]
+    charset = top.charset
+    if hasattr(top, "ROS"):
+        result: dict[int, str] = {}
+        for name in charset:
+            if name == ".notdef":
+                continue
+            if name.startswith("cid"):
+                try:
+                    cid = int(name[3:])
+                except ValueError:
+                    continue
+                result[cid] = name
+        return result
+    return {gid: name for gid, name in enumerate(charset)}
+
+
 def _strip_subset_prefix(obj: pikepdf.Object, key: str) -> None:
     raw = str(obj[key]).lstrip("/")
     if len(raw) > 7 and raw[6] == "+" and raw[:6].isupper() and raw[:6].isalpha():
