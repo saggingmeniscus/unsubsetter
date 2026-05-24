@@ -10,8 +10,8 @@ complete font found on disk. It was built to get a book past Amazon
 KDP's preflight check, but applies to any PDF that needs non-subsetted
 embedded fonts.
 
-V1 handles **CID TrueType fonts only.** Other font types are detected and
-reported, but left unchanged — see [Limitations](#limitations).
+It handles **CID TrueType and CID CFF fonts.** Other font types are
+detected and reported, but left unchanged — see [Limitations](#limitations).
 
 ## Install
 
