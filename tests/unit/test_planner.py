@@ -64,10 +64,17 @@ def test_build_plan_skips_non_subset_font():
     assert plan.skips()[0].reason == "not subsetted"
 
 
-def test_build_plan_skips_cff_font():
+def test_build_plan_replaces_cid_cff_when_index_has_font():
     rec = _fake_record_cff("BradleyInitials", subset_prefix="ABCDEF")
     plan = build_plan([rec], _idx_with("BradleyInitials"))
-    assert "CIDFontType0" in plan.skips()[0].reason
+    assert len(plan.replaces()) == 1
+    assert plan.replaces()[0].record.descendant_subtype == "CIDFontType0"
+
+
+def test_build_plan_skips_cid_cff_when_not_in_index():
+    rec = _fake_record_cff("BradleyInitials", subset_prefix="ABCDEF")
+    plan = build_plan([rec], FontIndex({}))
+    assert "not found" in plan.skips()[0].reason.lower()
 
 
 def test_build_plan_skips_type1_font():

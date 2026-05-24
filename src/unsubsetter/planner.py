@@ -52,6 +52,7 @@ class Plan:
 
 _SUPPORTED_SUBTYPES: set[tuple[str, str | None]] = {
     ("Type0", "CIDFontType2"),
+    ("Type0", "CIDFontType0"),
 }
 
 
