@@ -69,7 +69,7 @@ A careful pre-upload pass:
    ```
    pdffonts interior.unsubset.pdf
    ```
-   Confirm `sub=no` on every previously-subset CID TrueType font.
+   Confirm `sub=no` on every previously-subset CID TrueType or CID CFF font.
 
 4. **Spot-check a few pages** in a PDF viewer, paying attention to pages
    that use fonts the tool reported as skipped — those pass through
@@ -78,12 +78,31 @@ A careful pre-upload pass:
 5. **Upload to KDP.** If it flags a *different* font, re-run with
    `--only THAT_FONT` to test it in isolation, or report the issue.
 
+### Troubleshooting exit code 4
+
+If `unsubsetter --fix` exits with code 4, the disk font on your system
+doesn't match the subset embedded in the PDF for one or more CFF fonts.
+The report names the offending fonts. Either:
+
+- Locate the matching font version and supply it via `--font-path
+  /path/to/font/dir`; or
+- Re-run with `--exclude FONT_NAME` to leave that font alone (it'll stay
+  subset in the output).
+
 ## Limitations
 
-Re-embedding CFF (`CIDFontType0`) and simple Type 1 fonts isn't supported
-yet — those are planned for a later version. If a preflight checker flags
-one of them in the meantime, outlining it (converting the affected glyphs
-to vector paths) is the usual workaround.
+V2 handles **CID TrueType** (`CIDFontType2`) and **CID CFF** (`CIDFontType0`)
+subsetted fonts. Simple Type 1 (`/FontFile`) and Type 1C
+(`/FontFile3 /Subtype Type1C`) are detected and reported, but left unchanged.
+If a preflight checker flags one of those, outlining (converting the
+affected glyphs to vector paths) is the usual workaround until those types
+are supported.
+
+For CFF fonts, `unsubsetter` runs a glyph-correspondence check between the
+embedded subset and the disk full font. If they don't agree on glyph identity
+(e.g., your disk font is a different version than the one originally
+embedded), the run exits with code 4 and writes no output. Either supply
+the matching font via `--font-path` or skip that font with `--exclude`.
 
 ## Development
 
