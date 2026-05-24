@@ -204,3 +204,29 @@ def test_parse_to_unicode_cmap_returns_none_when_absent():
         font_obj = {}
 
     assert _parse_to_unicode_cmap(_FakeRecord()) is None
+
+
+from unsubsetter.applier import _build_widths_array_cff
+
+
+def test_build_widths_array_cff_covers_used_cids():
+    """Width array should contain entries for every used CID."""
+    disk = _tex_gyre_termes_path()
+    with pikepdf.open(TINY_BOOK_CFF) as pdf:
+        records = inspect_pdf(pdf)
+        rec = next(r for r in records if r.descendant_subtype == "CIDFontType0")
+        assert rec.used_cids, "fixture has no used CIDs"
+    from fontTools.ttLib import TTFont
+    full_tt = TTFont(str(disk))
+    arr = _build_widths_array_cff(full_tt, rec.used_cids)
+    # Flatten the run-length structure and pull CID entries.
+    cids_present: set[int] = set()
+    flat = list(arr)
+    i = 0
+    while i < len(flat):
+        head = int(flat[i])
+        run = flat[i + 1]
+        cids_present.update(range(head, head + len(run)))
+        i += 2
+    assert rec.used_cids.issubset(cids_present), \
+        f"missing CIDs: {sorted(rec.used_cids - cids_present)}"

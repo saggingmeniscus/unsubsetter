@@ -392,6 +392,49 @@ def _build_widths_array(tt: TTFont, used_cids: frozenset[int]) -> pikepdf.Array:
     return pikepdf.Array(result)
 
 
+def _build_widths_array_cff(tt: TTFont, used_cids: frozenset[int]) -> pikepdf.Array:
+    """Build a PDF /W array for a CFF font, covering all used CIDs.
+
+    Width source: the CFF's CharStrings. T2CharString populates `.width`
+    only after the program is walked, so we drive each charstring through
+    a NullPen. For name-keyed CFFs (the common disk case) CID == GID ==
+    index into glyph order; for CID-keyed CFFs we look up the cidNNNNN-
+    named charstring.
+    """
+    from fontTools.pens.basePen import NullPen
+
+    cff = tt["CFF "].cff
+    top = cff.topDictIndex[0]
+    char_strings = top.CharStrings
+    cid_to_name = _cid_to_glyph_name(cff)
+    upem = tt["head"].unitsPerEm
+
+    def width_for(cid: int) -> int:
+        name = cid_to_name.get(cid)
+        if name is None or name not in char_strings:
+            return 0
+        cs = char_strings[name]
+        cs.draw(NullPen())  # populates cs.width via charstring interpretation
+        return round((cs.width or 0) * 1000 / upem)
+
+    if not used_cids:
+        return pikepdf.Array([])
+
+    sorted_cids = sorted(used_cids)
+    result: list = []
+    run_start = sorted_cids[0]
+    run_widths = [width_for(run_start)]
+    for cid in sorted_cids[1:]:
+        if cid == run_start + len(run_widths):
+            run_widths.append(width_for(cid))
+        else:
+            result.extend([run_start, pikepdf.Array(run_widths)])
+            run_start = cid
+            run_widths = [width_for(cid)]
+    result.extend([run_start, pikepdf.Array(run_widths)])
+    return pikepdf.Array(result)
+
+
 def _default_width(tt: TTFont) -> int:
     hmtx = tt["hmtx"]
     upem = tt["head"].unitsPerEm
