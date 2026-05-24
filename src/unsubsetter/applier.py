@@ -1,6 +1,7 @@
 """Applier: executes a Plan on a pikepdf Pdf."""
 from __future__ import annotations
 import os
+import re
 import tempfile
 from dataclasses import dataclass, field
 from io import BytesIO
@@ -139,8 +140,157 @@ def _validate_truetype_replace(action: Replace) -> None:
         )
 
 
+_BFCHAR_BLOCK_RE = re.compile(rb"beginbfchar(.*?)endbfchar", re.DOTALL)
+_BFRANGE_BLOCK_RE = re.compile(rb"beginbfrange(.*?)endbfrange", re.DOTALL)
+_HEX_TOKEN_RE = re.compile(rb"<([0-9A-Fa-f]+)>")
+
+
+def _hex_to_str(hex_bytes: bytes) -> str:
+    """Decode a CMap <HHHH...> token as UTF-16BE into a Python str."""
+    raw = bytes.fromhex(hex_bytes.decode("ascii"))
+    # Pad to even length defensively (CMap hex is always even, but…).
+    if len(raw) % 2:
+        raw = b"\x00" + raw
+    return raw.decode("utf-16-be", errors="replace")
+
+
+def _parse_to_unicode_cmap(record) -> dict[int, str] | None:
+    """Parse the /ToUnicode CMap of a Type0 font record into {cid: unicode_str}.
+
+    Returns None if the record has no /ToUnicode entry. Handles bfchar and
+    the simple <start> <end> <dst_start> form of bfrange. Array form of
+    bfrange and other CMap shapes are silently skipped (CIDs with no parsed
+    entry just won't appear in the result).
+    """
+    type0 = record.font_obj
+    if "/ToUnicode" not in type0:
+        return None
+    body = bytes(type0["/ToUnicode"].read_bytes())
+
+    result: dict[int, str] = {}
+
+    for block in _BFCHAR_BLOCK_RE.findall(body):
+        tokens = _HEX_TOKEN_RE.findall(block)
+        for i in range(0, len(tokens) - 1, 2):
+            cid = int(tokens[i], 16)
+            result[cid] = _hex_to_str(tokens[i + 1])
+
+    for block in _BFRANGE_BLOCK_RE.findall(body):
+        # Tokenize the block in order, distinguishing hex tokens from arrays.
+        # The body of a bfrange is a sequence of either:
+        #   <start> <end> <dst_start>       — incrementing range
+        #   <start> <end> [<dst1> <dst2>…]  — explicit array (skipped here)
+        tokens: list[tuple[str, bytes]] = []
+        pos = 0
+        while pos < len(block):
+            m = _HEX_TOKEN_RE.match(block, pos)
+            if m:
+                tokens.append(("hex", m.group(1)))
+                pos = m.end()
+                continue
+            if block[pos:pos + 1] == b"[":
+                close = block.find(b"]", pos)
+                if close == -1:
+                    break
+                tokens.append(("array", b""))
+                pos = close + 1
+                continue
+            pos += 1
+        # Process triples.
+        i = 0
+        while i + 2 < len(tokens):
+            kind_s, val_s = tokens[i]
+            kind_e, val_e = tokens[i + 1]
+            kind_d, val_d = tokens[i + 2]
+            if kind_s == "hex" and kind_e == "hex" and kind_d == "hex":
+                start = int(val_s, 16)
+                end = int(val_e, 16)
+                dst_start_str = _hex_to_str(val_d)
+                base = ord(dst_start_str[-1]) if dst_start_str else 0
+                prefix = dst_start_str[:-1] if len(dst_start_str) > 1 else ""
+                for offset, cid in enumerate(range(start, end + 1)):
+                    result[cid] = prefix + chr(base + offset)
+                i += 3
+            elif kind_s == "hex" and kind_e == "hex" and kind_d == "array":
+                # Explicit-array bfrange form; best-effort parser skips it.
+                i += 3
+            else:
+                i += 1
+    return result
+
+
+def _disk_cmap_codepoint_to_gid(tt: TTFont) -> dict[int, int]:
+    """Build a {unicode_codepoint: gid} map from a TTFont's best cmap."""
+    best = tt["cmap"].getBestCmap() or {}
+    glyph_order = tt.getGlyphOrder()
+    name_to_gid = {name: gid for gid, name in enumerate(glyph_order)}
+    return {cp: name_to_gid[name] for cp, name in best.items() if name in name_to_gid}
+
+
+def _validate_cff_replace(action: Replace) -> None:
+    """Refuse if the disk CFF doesn't match the subset on glyph identity.
+
+    Uses the PDF's /ToUnicode CMap as the source of truth for what each
+    subset CID is supposed to render as. Under XeLaTeX's CID-wrapping
+    convention, subset CID c == disk GID c, so we verify that the disk
+    font's cmap maps the subset's Unicode codepoint to the same GID.
+    """
+    full_tt = TTFont(str(action.source_path))
+    if "CFF " not in full_tt:
+        raise UnsupportedFontError(
+            f"disk font {action.source_path} is not CFF-flavored "
+            f"(expected for {action.record.ps_name})"
+        )
+    subset_cid_to_unicode = _parse_to_unicode_cmap(action.record)
+    if subset_cid_to_unicode is None:
+        raise UnsupportedFontError(
+            f"font {action.record.ps_name} has no /ToUnicode CMap; "
+            f"unsubsetter cannot verify the disk font matches the embedded "
+            f"subset without semantic identity for each CID. Exclude this "
+            f"font with --exclude."
+        )
+    disk_cp_to_gid = _disk_cmap_codepoint_to_gid(full_tt)
+    disk_glyph_count = len(full_tt.getGlyphOrder())
+
+    missing: list[int] = []
+    mismatches: list[tuple[int, str, int]] = []  # (cid, unicode_str, actual_disk_gid)
+    for cid in sorted(action.record.used_cids):
+        if cid >= disk_glyph_count:
+            missing.append(cid)
+            continue
+        unicode_str = subset_cid_to_unicode.get(cid)
+        if not unicode_str or len(unicode_str) != 1:
+            # No /ToUnicode entry, or multi-codepoint value we can't trivially
+            # invert. Coverage check above is the only assertion.
+            continue
+        cp = ord(unicode_str)
+        actual_gid = disk_cp_to_gid.get(cp)
+        if actual_gid is None:
+            mismatches.append((cid, unicode_str, -1))
+        elif actual_gid != cid:
+            mismatches.append((cid, unicode_str, actual_gid))
+
+    if missing or mismatches:
+        first = (
+            f"CID {mismatches[0][0]} ({mismatches[0][1]!r}): "
+            f"subset expects disk GID {mismatches[0][0]}, "
+            f"disk maps codepoint to GID {mismatches[0][2]}"
+            if mismatches
+            else f"CID {missing[0]} not in disk font"
+        )
+        raise UnsupportedFontError(
+            f"CFF glyph correspondence check failed for {action.record.ps_name}: "
+            f"{len(missing)} CIDs missing from disk font, "
+            f"{len(mismatches)} CIDs map to a different glyph in the disk font. "
+            f"The disk font does not match the embedded subset's glyph identity; "
+            f"exclude this font with --exclude or supply a matching version via "
+            f"--font-path. First problem: {first}"
+        )
+
+
 _VALIDATORS: dict[tuple[str, str | None], ValidatorFn] = {
     ("Type0", "CIDFontType2"): _validate_truetype_replace,
+    ("Type0", "CIDFontType0"): _validate_cff_replace,
 }
 
 
