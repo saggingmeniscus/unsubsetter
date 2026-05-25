@@ -17,15 +17,17 @@ detected and reported, but left unchanged — see [Limitations](#limitations).
 
 Install the `unsubsetter` command into an isolated environment on your PATH:
 
-    uv tool install git+https://github.com/saggingmeniscus/unsubsetter
+    uv tool install unsubsetter
 
-Or, from a local clone:
+Or with pipx:
+
+    pipx install unsubsetter
+
+### From source
 
     git clone https://github.com/saggingmeniscus/unsubsetter
     cd unsubsetter
     uv tool install .
-
-Both install from source; a published PyPI release will come later.
 
 ## Usage
 
