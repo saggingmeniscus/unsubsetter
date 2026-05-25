@@ -5,12 +5,34 @@ description = "Re-embed full (non-subset) fonts in PDFs."
 authors = [{name = "Jacob Smullyan", email = "smulloni@smullyan.org"}]
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["pdf", "fonts", "subset", "embedding", "preflight", "kdp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Printing",
+    "Topic :: Text Processing :: Fonts",
+    "Topic :: Multimedia :: Graphics",
+    "Environment :: Console",
+]
 dependencies = [
     "pikepdf>=9.0",
     "fonttools>=4.50",
     "click>=8.1",
     "pillow>=10.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/saggingmeniscus/unsubsetter"
+Source = "https://github.com/saggingmeniscus/unsubsetter"
+Issues = "https://github.com/saggingmeniscus/unsubsetter/issues"
+Changelog = "https://github.com/saggingmeniscus/unsubsetter/blob/master/CHANGELOG.md"
 
 [project.scripts]
 unsubsetter = "unsubsetter.cli:cli"
