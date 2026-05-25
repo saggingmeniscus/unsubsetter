@@ -11,3 +11,4 @@ build/
 .claude/
 tmp/
 docs/superpowers/
+.pypirc
